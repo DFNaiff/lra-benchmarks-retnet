@@ -90,6 +90,34 @@ def get_listops_config():
     return config, model_config
 
 
+def get_listops_tiny_config():
+    config = ml_collections.ConfigDict()
+    config.batch_size = 4
+#     config.gradient_accumulation_steps = 8
+    config.eval_frequency = 50
+    config.total_eval_samples = 2000
+    config.total_train_samples = 96000
+    config.learning_rate = 0.005
+    config.weight_decay = 1e-1
+    config.warmup_steps = 1000
+    config.tied_weights = False
+    config.max_length = 300
+    config.tokenizer = make_word_tokenizer(list('0123456789') + ['[', ']', '(', ')', 'MIN', 'MAX', 'MEDIAN', 'SUM_MOD'])
+    #make_char_tokenizer(set('0123456789 MIN MAX MEDIAN SUM_MOD [ ] ( )'))
+    config.lr_scheduler = create_learning_rate_scheduler("constant * linear_warmup * rsqrt_decay", config)
+
+    model_config = ml_collections.ConfigDict()    
+    model_config.max_position_embeddings = config.max_length
+    model_config.num_attention_heads = 8
+    model_config.num_hidden_layers = 6
+    model_config.hidden_size = 512
+    model_config.intermediate_size = 2048
+    model_config.num_labels = 10
+    model_config.vocab_size = config.tokenizer.vocab_size
+    
+    return config, model_config
+
+
 def get_text_classification_config(num_labels=2):
     config = ml_collections.ConfigDict()
     config.batch_size = 4

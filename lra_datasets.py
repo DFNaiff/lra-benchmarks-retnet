@@ -52,6 +52,26 @@ class ListOpsDataset:
         return len(self.data)
 
 
+class ListOpsTinyDataset:
+    def __init__(self, config, split='train'):
+        
+        data_paths = {'train': "datasets/lra_release/listops-tiny/basic_train.tsv",
+                      'eval': "datasets/lra_release/listops-tiny/basic_val.tsv"}
+        self.data = pd.read_csv(data_paths[split], delimiter='\t')
+        self.tokenizer = config.tokenizer
+        self.max_length = config.max_length
+        
+    def __getitem__(self, i):
+        data = self.data.iloc[i]
+        source = data.Source
+        inputs = self.tokenizer(source, max_length=self.max_length) #return_tensors='pt', truncation=True, padding='max_length'
+        target = data.Target
+        return inputs, torch.LongTensor([target])
+    
+    def __len__(self):
+        return len(self.data)
+
+
 class Cifar10Dataset:
     def __init__(self, config, split='train'):
         data_paths = {'train': [f"datasets/cifar-10-batches-py/data_batch_{i}" for i in range(1, 6)],
