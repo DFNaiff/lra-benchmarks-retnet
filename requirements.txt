@@ -8,3 +8,5 @@ Requests
 torch
 tqdm
 transformers
+jax
+jaxlib
