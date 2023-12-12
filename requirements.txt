@@ -1,0 +1,10 @@
+deepspeed
+einops
+jaxtyping
+ml_collections
+numpy
+pandas
+Requests
+torch
+tqdm
+transformers
