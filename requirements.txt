@@ -1,12 +1,9 @@
-deepspeed
 einops
 jaxtyping
-ml_collections
+lightning
 numpy
-pandas
-Requests
+Pillow
 torch
-tqdm
-transformers
-jax
-jaxlib
+torchaudio
+torchtext
+torchvision
