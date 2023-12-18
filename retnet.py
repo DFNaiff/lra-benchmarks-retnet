@@ -88,7 +88,7 @@ class MSRBlock(torch.nn.Module):
     """
         This is the retentive block substituting the attention block.
     """
-    def __init__(self, dmodel : int, nheads : int):
+    def __init__(self, dmodel : int, nheads : int, has_wg : bool = False):
         super().__init__()
         self.dmodel = dmodel
         self.nheads = nheads
@@ -99,14 +99,17 @@ class MSRBlock(torch.nn.Module):
         self.xpos = XPos2(self.nheads)
         self.gn = EmbedGroupNorm(self.dmodel, self.nheads)
         self.act = torch.nn.SiLU()
-
+        self.has_wg = has_wg
         # Apply Xavier Initialization
         self.WQ = torch.nn.Parameter(torch.empty([nheads, self.dhead, dmodel]))
         self.WK = torch.nn.Parameter(torch.empty([nheads, self.dhead, dmodel]))
         self.WV = torch.nn.Parameter(torch.empty([nheads, self.dhead, dmodel]))
-        self.WG = torch.nn.Parameter(torch.empty([dmodel, dmodel]))
         self.WO = torch.nn.Parameter(torch.empty([dmodel, dmodel]))
-        for W in [self.WQ, self.WK, self.WV, self.WG, self.WO]:
+        weights = [self.WQ, self.WK, self.WV, self.WO]
+        if self.has_wg:
+            self.WG = torch.nn.Parameter(torch.empty([dmodel, dmodel]))
+            weights.append(self.WG)
+        for W in weights:
             torch.nn.init.xavier_normal_(W)
         scale = 1.0 - (2.0)**(-5-torch.arange(self.nheads)) #[nhead]
         self.register_buffer("scale", scale)
@@ -154,8 +157,11 @@ class MSRBlock(torch.nn.Module):
     def forward(self, x : Float[Array, "batch seq dim"]) -> Float[Array, "batch seq dim"]:
         # return R
         R = self.parallel_retention(x)
-        G = self.act(x@self.WG) #[nbatch, nseq, model]
-        y = (G*R)@self.WO #[nbatch, nseq, model]
+        if self.has_wg:
+            G = self.act(x@self.WG) #[nbatch, nseq, model]
+            R = R*G
+        y = R@self.WO #[nbatch, nseq, model]
+        y = R@self.WO
         return y
 
     def serialized_forward(self, x : Float[Array, "batch dim"],
@@ -166,8 +172,10 @@ class MSRBlock(torch.nn.Module):
         self.state = state
         self.offset += 1
         #R : [nbatch, dmodel]
-        G = self.act(x@self.WG) #[nbatch, dmodel]
-        y = (G*R)@self.WO #[nbatch, model]
+        if self.has_wg:
+            G = self.act(x@self.WG) #[nbatch, dmodel]
+            R = R*G
+        y = R@self.WO
         y = y.unsqueeze(1) #[nbatch, 1, model]
         return y
 
@@ -214,11 +222,11 @@ class RetBlock(torch.nn.Module):
     Implements an alternative version of GPT-2 encoder,
     where the attention block is substituted by retentive block
     """
-    def __init__(self, dmodel : int, nheads : int, nhidden : int, pdrop : float = 0.0):
+    def __init__(self, dmodel : int, nheads : int, nhidden : int, pdrop : float = 0.0, has_wg : bool = False):
         super().__init__()
         self.ln1 = torch.nn.LayerNorm(dmodel)
         self.ln2 = torch.nn.LayerNorm(dmodel)
-        self.msr = MSRBlock(dmodel, nheads) #Retentive Block
+        self.msr = MSRBlock(dmodel, nheads, has_wg=has_wg) #Retentive Block
         self.ffn = FFNBlock(dmodel, nhidden) #FFN
         self.dropout = torch.nn.Dropout(pdrop)
 
@@ -236,10 +244,10 @@ class RetentionEncoder(torch.nn.Module):
     """
 
     def __init__(self, nlayers : int, nheads : int, dmodel : int, nhidden : int = 128,
-                 pdrop : float = 0.0):
+                 pdrop : float = 0.0, has_wg : bool = False):
         super().__init__()
         self.nlayers = nlayers
-        self.layers = torch.nn.ModuleList(RetBlock(dmodel, nheads, nhidden, pdrop) for _ in range(nlayers))
+        self.layers = torch.nn.ModuleList(RetBlock(dmodel, nheads, nhidden, pdrop, has_wg=has_wg) for _ in range(nlayers))
         self.ln = torch.nn.LayerNorm(dmodel)
 
     def forward(self, values : Float[Array, "batch seq dim"]) -> Float[Array, "batch seq dim"]:
@@ -254,19 +262,21 @@ class GPTR(torch.nn.Module):
     Implements an alternative version of GPT-2, where the attention blocks are substituted by retentive blocks
     """
     def __init__(self, nvocab : int,
-                 nctx : int,
+                 nctx : int | None = None,
                  dembed : int=64,
                  nlayers : int=4,
                  nheads : int=4,
-                 nhidden : int | None = None):
+                 nhidden : int | None = None,
+                 has_wg : bool = False):
         super().__init__()
         self.nvocab = nvocab
-        self.ntokens = nctx
+        self.nctx = nctx
         self.embed = torch.nn.Embedding(nvocab, dembed, padding_idx=0)
-        self.pos = torch.nn.Parameter(torch.zeros([nctx, dembed]))
-        torch.nn.init.xavier_uniform_(self.pos)
+        if self.nctx is not None:
+            self.pos = torch.nn.Parameter(torch.zeros([nctx, dembed]))
+            torch.nn.init.xavier_uniform_(self.pos)
         nhidden = nhidden if nhidden is not None else 4*dembed
-        self.decoder = RetentionEncoder(nlayers, nheads, dembed, nhidden)
+        self.decoder = RetentionEncoder(nlayers, nheads, dembed, nhidden, has_wg=has_wg)
         self.projection = torch.nn.Linear(dembed, nvocab)
         self.dropout = torch.nn.Dropout(0.0)
 
@@ -288,6 +298,8 @@ class GPTR(torch.nn.Module):
         d = tokens.shape[-1]
         xe = self.embed(tokens)
         if apply_positional_embedding:
+            if self.nctx is None:
+                raise ValueError
             d = tokens.shape[-1]
             pos = self.pos[:d, :]
             xe += pos
@@ -346,7 +358,7 @@ class GPTRAutoregressive(torch.nn.Module):
 
 
 class GPTRClassifier(torch.nn.Module):
-    def __init__(self, config):
+    def __init__(self, config, has_wg=False):
         super().__init__()
         assert config.nclasses is not None
         self.model = GPTR(config.vocab_size,
@@ -354,26 +366,17 @@ class GPTRClassifier(torch.nn.Module):
                           config.embedding_dim,
                           config.nlayers,
                           config.nheads,
-                          config.nhidden)
+                          config.nhidden,
+                          has_wg=has_wg)
         self.classifier = torch.nn.Linear(config.embedding_dim,
                                           config.nclasses)
 
-    def get_which_index_from_mask(self, mask):
-        """
-        From a mask of shape [..., D], get from where we should call our classifier
-        """
-        # mask : [..., D]
-        # return : [...]
-        out = torch.max(1-mask, dim=-1)
-        index_seq = (out.indices*out.values + mask.shape[-1]*(1-out.values))-1
-        index_batch = torch.arange(index_seq.shape[0]).to(index_seq)
-        return index_seq, index_batch
-
-    def forward(self, input_ids, attention_mask):
+    def forward(self, input_ids, lengths):
         x = input_ids
-        mask = attention_mask
-        index_seq, index_batch = self.get_which_index_from_mask(mask)
-        x = self.model.decode(x)[index_batch, index_seq, :]
+        index_seq = lengths-1
+        index_batch = torch.arange(x.shape[0])
+        x = self.model.decode(x)
+        x = x[index_batch, index_seq, :]
         x = self.classifier(x)
         output_cls = collections.namedtuple("output", ["logits"])
         res = output_cls(logits=x)
