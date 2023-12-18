@@ -92,7 +92,7 @@ def test_listops(batch_split=8, num_workers=23, wg=False):
     trainer = lightning.Trainer(max_epochs=2, accumulate_grad_batches=8)
     trainer.fit(model=module, train_dataloaders=train_dataloader, val_dataloaders=valid_dataloader)
 
-def test_imdb(batch_split=8, num_workers=23, wg=False):
+def test_imdb(batch_split=16, num_workers=23, wg=False):
     dataset = IMDB("imdb")
     dataset.setup()
     orig_batch_size = 32
