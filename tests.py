@@ -5,7 +5,7 @@ import torch
 import lightning
 
 from retnet import GPTR, GPTRConfig, GPTRClassifier
-from lra import ListOps
+from lra import ListOps, IMDB
 
 
 
@@ -92,9 +92,30 @@ def test_listops(batch_split=8, num_workers=23, wg=False):
     trainer = lightning.Trainer(max_epochs=2, accumulate_grad_batches=8)
     trainer.fit(model=module, train_dataloaders=train_dataloader, val_dataloaders=valid_dataloader)
 
+def test_imdb(batch_split=8, num_workers=23, wg=False):
+    dataset = IMDB("imdb")
+    dataset.setup()
+    orig_batch_size = 32
+    batch_size = orig_batch_size//batch_split
+    train_dataloader = dataset.train_dataloader(batch_size=batch_size, num_workers=num_workers)
+    valid_dataloader = dataset.val_dataloader(batch_size=batch_size, num_workers=num_workers)
+    total_epochs = 5000//(len(train_dataloader)//batch_split) + 1
+    config = GPTRConfig(vocab_size=dataset.n_tokens,
+                    context_window=None,
+                    nclasses=2,
+                    embedding_dim=128,
+                    nheads=8,
+                    nlayers=4,
+                    nhidden=512
+                    )
+    model = GPTRClassifier(config, has_wg=wg)
+    module = LLMClassifier(model, warmup_steps=0)
+    trainer = lightning.Trainer(max_epochs=2, accumulate_grad_batches=8)
+    trainer.fit(model=module, train_dataloaders=train_dataloader, val_dataloaders=valid_dataloader)
+
 
 if __name__ == "__main__":
-    TASKS = ['listops']
+    TASKS = ['listops', 'imdb']
     parser = ArgumentParser()
     parser.add_argument("--wg", default="False", choices=["False", "True"], help="Whether to include WG in RetNet")
     parser.add_argument("--task", default="listops", choices=TASKS,
@@ -105,3 +126,5 @@ if __name__ == "__main__":
     wg = True if wg == "True" else False
     if task_name == "listops":
         test_listops(wg=wg)
+    elif task_name == 'imdb':
+        test_imdb(wg=wg)
