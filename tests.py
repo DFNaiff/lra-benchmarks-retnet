@@ -99,17 +99,17 @@ def test_imdb(batch_split=8, num_workers=23, wg=False):
     batch_size = orig_batch_size//batch_split
     train_dataloader = dataset.train_dataloader(batch_size=batch_size, num_workers=num_workers)
     valid_dataloader = dataset.val_dataloader(batch_size=batch_size, num_workers=num_workers)
-    total_epochs = 5000//(len(train_dataloader)//batch_split) + 1
+    total_epochs = 20000//(len(train_dataloader)//batch_split) + 1
     config = GPTRConfig(vocab_size=dataset.n_tokens,
                     context_window=None,
                     nclasses=2,
-                    embedding_dim=128,
+                    embedding_dim=512,
                     nheads=8,
-                    nlayers=4,
-                    nhidden=512
+                    nlayers=6,
+                    nhidden=2048
                     )
     model = GPTRClassifier(config, has_wg=wg)
-    module = LLMClassifier(model, warmup_steps=0)
+    module = LLMClassifier(model, warmup_steps=1000*batch_split)
     trainer = lightning.Trainer(max_epochs=2, accumulate_grad_batches=8)
     trainer.fit(model=module, train_dataloaders=train_dataloader, val_dataloaders=valid_dataloader)
 
