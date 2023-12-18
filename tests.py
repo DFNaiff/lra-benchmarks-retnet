@@ -117,7 +117,7 @@ def test_imdb(batch_split=16, num_workers=23, wg=False):
 if __name__ == "__main__":
     TASKS = ['listops', 'imdb']
     parser = ArgumentParser()
-    parser.add_argument("--wg", default="False", choices=["False", "True"], help="Whether to include WG in RetNet")
+    parser.add_argument("--wg", default="True", choices=["False", "True"], help="Whether to include WG in RetNet")
     parser.add_argument("--task", default="listops", choices=TASKS,
                         help="choose an LRA dataset from available options")
     args = parser.parse_args()
