@@ -10,9 +10,10 @@ def make_scale_matrix(nseq : int,
                       scale : Float[Array, "nheads"]) -> Float[Array, "nheads nseq nseq"]:
     n = nseq
     expoent = (torch.arange(n)[..., None] - torch.arange(n)).to(scale) #[n, n]
-    posmask = (expoent >= 0).to(scale) #[n, n]
+    posmask = torch.log((expoent >= 0).to(scale)) #[n, n]    
     scale = scale[..., None, None]
-    mask = posmask*scale**expoent #[nheads, n, n]
+    logmask = expoent*torch.log(scale) + posmask #[nheads, n, n]
+    mask = torch.exp(logmask)
     return mask
 
 
