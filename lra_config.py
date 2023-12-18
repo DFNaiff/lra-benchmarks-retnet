@@ -130,6 +130,7 @@ def get_text_classification_config(num_labels=2):
     config.tokenizer = ascii_tokenizer
     config.tied_weights = False
     config.max_length = 1000
+    config.lr_scheduler = create_learning_rate_scheduler("constant * linear_warmup * cosine_decay", config)
 
     model_config = ml_collections.ConfigDict()
     model_config.max_position_embeddings = config.max_length
