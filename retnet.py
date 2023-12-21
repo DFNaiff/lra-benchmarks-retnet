@@ -2,8 +2,9 @@ import collections
 
 import torch
 import einops
-
 from jaxtyping import Array, Float, Int
+
+from stirling.retnet import RetNet as RetNetStirling
 
 
 def make_scale_matrix(nseq : int,
@@ -268,7 +269,8 @@ class GPTR(torch.nn.Module):
                  nlayers : int=4,
                  nheads : int=4,
                  nhidden : int | None = None,
-                 has_wg : bool = False):
+                 has_wg : bool = False,
+                 use_stirling : bool = False):
         super().__init__()
         self.nvocab = nvocab
         self.nctx = nctx
@@ -277,7 +279,10 @@ class GPTR(torch.nn.Module):
             self.pos = torch.nn.Parameter(torch.zeros([nctx, dembed]))
             torch.nn.init.xavier_uniform_(self.pos)
         nhidden = nhidden if nhidden is not None else 4*dembed
-        self.decoder = RetentionEncoder(nlayers, nheads, dembed, nhidden, has_wg=has_wg)
+        if use_stirling:
+            self.decoder = RetNetStirling(nlayers, dembed, nhidden, nheads)
+        else:
+            self.decoder = RetentionEncoder(nlayers, nheads, dembed, nhidden, has_wg=has_wg)
         self.projection = torch.nn.Linear(dembed, nvocab)
         self.dropout = torch.nn.Dropout(0.0)
 
@@ -359,7 +364,7 @@ class GPTRAutoregressive(torch.nn.Module):
 
 
 class GPTRClassifier(torch.nn.Module):
-    def __init__(self, config, has_wg=False):
+    def __init__(self, config, has_wg=True, use_stirling=False):
         super().__init__()
         assert config.nclasses is not None
         self.model = GPTR(config.vocab_size,
@@ -368,7 +373,8 @@ class GPTRClassifier(torch.nn.Module):
                           config.nlayers,
                           config.nheads,
                           config.nhidden,
-                          has_wg=has_wg)
+                          has_wg=has_wg,
+                          use_stirling=use_stirling)
         self.classifier = torch.nn.Linear(config.embedding_dim,
                                           config.nclasses)
 

@@ -70,8 +70,29 @@ class LLMClassifier(lightning.LightningModule):
             self.lr_warmup_config(),
         )
 
+def test_listops_mini(batch_split=32, num_workers=4, wg=False, stirling=False):
+    dataset = ListOps("listops-1000")
+    dataset.setup()
+    orig_batch_size = 32
+    batch_size = orig_batch_size//batch_split
+    train_dataloader = dataset.train_dataloader(batch_size=batch_size, num_workers=num_workers)
+    valid_dataloader = dataset.val_dataloader(batch_size=batch_size, num_workers=num_workers)
+    total_epochs = 5000//(len(train_dataloader)//batch_split) + 1
+    config = GPTRConfig(vocab_size=dataset.vocab_size,
+                    context_window=None,
+                    nclasses=10,
+                    embedding_dim=16,
+                    nheads=1,
+                    nlayers=1,
+                    nhidden=64
+                    )
+    model = GPTRClassifier(config, has_wg=wg, use_stirling=stirling)
+    module = LLMClassifier(model, warmup_steps=0)
+    trainer = lightning.Trainer(max_epochs=2, accumulate_grad_batches=8)
+    trainer.fit(model=module, train_dataloaders=train_dataloader, val_dataloaders=valid_dataloader)
 
-def test_listops(batch_split=8, num_workers=23, wg=False):
+
+def test_listops(batch_split=8, num_workers=23, wg=False, stirling=False):
     dataset = ListOps("listops-1000")
     dataset.setup()
     orig_batch_size = 32
@@ -87,12 +108,12 @@ def test_listops(batch_split=8, num_workers=23, wg=False):
                     nlayers=6,
                     nhidden=2048
                     )
-    model = GPTRClassifier(config, has_wg=wg)
+    model = GPTRClassifier(config, has_wg=wg, use_stirling=stirling)
     module = LLMClassifier(model, warmup_steps=0)
     trainer = lightning.Trainer(max_epochs=2, accumulate_grad_batches=8)
     trainer.fit(model=module, train_dataloaders=train_dataloader, val_dataloaders=valid_dataloader)
 
-def test_imdb(batch_split=16, num_workers=23, wg=False):
+def test_imdb(batch_split=16, num_workers=23, wg=False, stirling=False):
     dataset = IMDB("imdb")
     dataset.setup()
     orig_batch_size = 32
@@ -108,23 +129,30 @@ def test_imdb(batch_split=16, num_workers=23, wg=False):
                     nlayers=6,
                     nhidden=2048
                     )
-    model = GPTRClassifier(config, has_wg=wg)
+    model = GPTRClassifier(config, has_wg=wg, use_stirling=stirling)
     module = LLMClassifier(model, warmup_steps=1000*batch_split)
     trainer = lightning.Trainer(max_epochs=2, accumulate_grad_batches=8)
     trainer.fit(model=module, train_dataloaders=train_dataloader, val_dataloaders=valid_dataloader)
 
 
+def string_to_bool(s):
+    return True if s == "True" else False
+
+
 if __name__ == "__main__":
-    TASKS = ['listops', 'imdb']
+    TASKS = ['listops', 'imdb', 'listops-mini']
     parser = ArgumentParser()
     parser.add_argument("--wg", default="True", choices=["False", "True"], help="Whether to include WG in RetNet")
+    parser.add_argument("--stirling", default="False", choices=["False", "True"], help="Whether to use Stirling's RetNet")
     parser.add_argument("--task", default="listops", choices=TASKS,
                         help="choose an LRA dataset from available options")
     args = parser.parse_args()
     task_name = args.task
-    wg = args.wg
-    wg = True if wg == "True" else False
+    wg = string_to_bool(args.wg)
+    stirling = string_to_bool(args.stirling)
     if task_name == "listops":
-        test_listops(wg=wg)
+        test_listops(wg=wg, stirling=stirling)
+    elif task_name == "listops-mini":
+        test_listops_mini(wg=wg, stirling=stirling)
     elif task_name == 'imdb':
-        test_imdb(wg=wg)
+        test_imdb(wg=wg, stirling=stirling)
