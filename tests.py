@@ -5,7 +5,7 @@ import torch
 import lightning
 
 from retnet import GPTR, GPTRConfig, GPTRClassifier
-from lra import ListOps, IMDB, ParityDataset
+from lra import ListOps, ListOpsTiny, IMDB, ParityDataset
 
 
 
@@ -117,8 +117,8 @@ def test_parity_mini(batch_split=1, num_workers=4, wg=False, decoder_mode="defau
     trainer.fit(model=module, train_dataloaders=train_dataloader, val_dataloaders=valid_dataloader)
 
 
-def test_listops_mini(batch_split=32, num_workers=4, wg=False, decoder_mode="default"):
-    dataset = ListOps("listops-1000")
+def test_listops_mini(batch_split=1, num_workers=4, wg=False, decoder_mode="default"):
+    dataset = ListOpsTiny("listops-tiny")
     dataset.setup()
     orig_batch_size = 32
     batch_size = orig_batch_size//batch_split
@@ -126,12 +126,12 @@ def test_listops_mini(batch_split=32, num_workers=4, wg=False, decoder_mode="def
     valid_dataloader = dataset.val_dataloader(batch_size=batch_size, num_workers=num_workers)
     total_epochs = 5000//(len(train_dataloader)//batch_split) + 1
     config = GPTRConfig(vocab_size=dataset.vocab_size,
-                    context_window=None,
+                    context_window=2048,
                     nclasses=10,
-                    embedding_dim=16,
-                    nheads=1,
-                    nlayers=1,
-                    nhidden=64,
+                    embedding_dim=64,
+                    nheads=4,
+                    nlayers=2,
+                    nhidden=256,
                     pdrop=0.1
                     )
     model = GPTRClassifier(config, has_wg=wg, decoder_mode=decoder_mode)
@@ -171,7 +171,7 @@ def test_imdb(batch_split=16, num_workers=23, wg=False, decoder_mode="default"):
     valid_dataloader = dataset.val_dataloader(batch_size=batch_size, num_workers=num_workers)
     total_epochs = 20000//(len(train_dataloader)//batch_split) + 1
     config = GPTRConfig(vocab_size=dataset.n_tokens,
-                    context_window=2500,
+                    context_window=5000,
                     nclasses=2,
                     embedding_dim=512,
                     nheads=8,

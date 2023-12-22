@@ -347,7 +347,8 @@ class GPTRConfig(object):
                  nlayers=6,
                  nheads=4,
                  nhidden=None,
-                 nclasses=None):
+                 nclasses=None,
+                 pdrop=0.0):
         self.vocab_size = vocab_size
         self.context_window = context_window
         self.embedding_dim = embedding_dim
@@ -357,6 +358,7 @@ class GPTRConfig(object):
         if self.nhidden is None:
             self.nhidden = 4*self.embedding_dim
         self.nclasses = nclasses
+        self.pdrop = pdrop
 
     def from_model_config(model_config):
         vocab_size = model_config.vocab_size

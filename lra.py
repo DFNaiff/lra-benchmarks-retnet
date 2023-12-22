@@ -382,6 +382,9 @@ class ListOps(SequenceDataset):
             vocab = pickle.load(f)
         return dataset, tokenizer, vocab
 
+class ListOpsTiny(ListOps):
+    _name_ = "listops-tiny"
+
 class PathFinderDataset(torch.utils.data.Dataset):
     """Path Finder dataset."""
 
@@ -764,7 +767,9 @@ class ParityDataset(torch.utils.data.Dataset):
         sequences = list(map(list, itertools.product(range(2), repeat=n)))
         sequences = torch.tensor(sequences, dtype=torch.long)
         lengths = n * torch.ones(len(sequences), dtype=torch.long)
-        labels = sequences[:, 0]
+        # labels = sequences[:, 0]
+        # labels = sequences.sum(dim=1) % 2
+        labels = ((sequences.sum(dim=1) - n//2) > 0).long()
         return sequences, labels, lengths
 
     def __len__(self):
