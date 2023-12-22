@@ -4,8 +4,11 @@ import io
 import logging
 import os
 import pickle
+import contextlib
+import itertools
 from pathlib import Path
 
+import numpy as np
 import torch
 from torch import nn
 import torch.nn.functional as F
@@ -19,6 +22,17 @@ from base import SequenceDataset, ImageResolutionSequenceDataset
 
 
 default_data_path = Path(__file__).parent.resolve()/"datasets"
+
+
+
+@contextlib.contextmanager
+def temp_seed(seed):
+    state = np.random.get_state()
+    np.random.seed(seed)
+    try:
+        yield
+    finally:
+        np.random.set_state(state)
 
 
 class IMDB(SequenceDataset):
@@ -691,3 +705,77 @@ class AAN(SequenceDataset):
         with open(cache_dir / "vocab.pkl", "rb") as f:
             vocab = pickle.load(f)
         return dataset, tokenizer, vocab
+
+
+class ParityDataset(torch.utils.data.Dataset):
+    def __init__(self, maxsize=10, minsize=3, ndata=1000,
+                 train_split=0.8):
+        # max_possible_data = 2**maxsize - 2**(minsize-1)
+        max_possible_data = sum(2**i for i in range(minsize, maxsize+1))
+        assert ndata <= max_possible_data
+        self.ndata = ndata
+        self.max_possible_data = max_possible_data
+        self.maxsize = maxsize
+        self.minsize = minsize
+        self.train_split = train_split
+        self.vocab_size = 2
+
+    def setup(self, seed=42):
+        with temp_seed(seed):
+            inds = np.random.choice(self.max_possible_data, self.ndata, replace=False)
+            data = []
+            counter = 0
+            for n in range(self.minsize, self.maxsize+1):
+                sequences, labels, lengths = self.list_of_binary_strings_n(n)
+                for k in range(2**n):
+                    if counter in inds:
+                        data.append((sequences[k], labels[k], lengths[k]))
+                    counter += 1
+            ind = np.random.permutation(len(data))
+        self.data = [data[i] for i in ind]
+        self.train_ind = int(self.train_split * len(self.data))
+
+    def train_dataloader(self, *args, **kwargs):
+        return torch.utils.data.DataLoader(self.data[:self.train_ind],
+                                           *args, **kwargs,
+                                           collate_fn=self.collate_fn)
+
+    def val_dataloader(self, *args, **kwargs):
+        return torch.utils.data.DataLoader(self.data[self.train_ind:],
+                                           *args, **kwargs,
+                                           collate_fn=self.collate_fn)
+
+    def collate_fn(self, data):
+        """
+        data: is a list of tuples with (example, label, length)
+                where 'example' is a tensor of arbitrary shape
+                and label/length are scalars
+        """
+        _, labels, lengths = zip(*data)
+        max_len = max(lengths)
+        features = torch.zeros((len(data), max_len), dtype=torch.long)
+        labels = torch.tensor(labels, dtype=torch.long)
+        lengths = torch.tensor(lengths, dtype=torch.long)
+        for i, (example, _, _) in enumerate(data):
+            features[i, :len(example)] = example
+        return features, labels, {'lengths': lengths}
+
+    def list_of_binary_strings_n(self, n):
+        sequences = list(map(list, itertools.product(range(2), repeat=n)))
+        sequences = torch.tensor(sequences, dtype=torch.long)
+        lengths = n * torch.ones(len(sequences), dtype=torch.long)
+        labels = sequences[:, 0]
+        return sequences, labels, lengths
+
+    def __len__(self):
+        return len(self.data)
+
+    def __getitem__(self, idx):
+        return self.data[idx]
+
+
+            # data.append((sequences, labels, lengths))
+        # for n in range(self.minsize, self.maxsize+1):
+            # sequences, labels, lengths = list_of_binary_strings_n(n)
+            # data.append((sequences, labels, lengths))
+        # return data

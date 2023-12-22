@@ -259,6 +259,28 @@ class RetentionEncoder(torch.nn.Module):
         return values
 
 
+class GPTEncoder(torch.nn.Module):
+    def __init__(self, nlayers : int, nheads : int,
+                 dmodel : int, nhidden : int = 128,
+                 pdrop : float = 0.0):
+        super().__init__()
+        encoder_layer = torch.nn.TransformerEncoderLayer(dmodel,
+                                                         nheads,
+                                                         nhidden,
+                                                         dropout=pdrop)
+        self.encoder = torch.nn.TransformerEncoder(encoder_layer,
+                                                   nlayers)
+    
+    def forward(self, x):
+        mask = self.generate_square_subsequent_mask(x.shape[1]).to(x.device)
+        return self.encoder(x, mask, is_causal=True)
+
+    def generate_square_subsequent_mask(self, sz):
+        mask = (torch.triu(torch.ones(sz, sz)) == 1).transpose(0, 1)
+        mask = mask.float().masked_fill(mask == 0, float('-inf')).masked_fill(mask == 1, float(0.0))
+        return mask
+
+
 class GPTR(torch.nn.Module):
     """
     Implements an alternative version of GPT-2, where the attention blocks are substituted by retentive blocks
@@ -269,9 +291,11 @@ class GPTR(torch.nn.Module):
                  nlayers : int=4,
                  nheads : int=4,
                  nhidden : int | None = None,
+                 pdrop : float = 0.0,
                  has_wg : bool = False,
-                 use_stirling : bool = False):
+                 decoder_mode : str = "default"):
         super().__init__()
+        assert (decoder_mode in ["default", "stirling", "transformer"])
         self.nvocab = nvocab
         self.nctx = nctx
         self.embed = torch.nn.Embedding(nvocab, dembed, padding_idx=0)
@@ -279,12 +303,14 @@ class GPTR(torch.nn.Module):
             self.pos = torch.nn.Parameter(torch.zeros([nctx, dembed]))
             torch.nn.init.xavier_uniform_(self.pos)
         nhidden = nhidden if nhidden is not None else 4*dembed
-        if use_stirling:
+        if decoder_mode == "stirling":
             self.decoder = RetNetStirling(nlayers, dembed, nhidden, nheads)
-        else:
-            self.decoder = RetentionEncoder(nlayers, nheads, dembed, nhidden, has_wg=has_wg)
+        elif decoder_mode == "transformer":
+            self.decoder = GPTEncoder(nlayers, nheads, dembed, nhidden, pdrop)
+        elif decoder_mode == "default":
+            self.decoder = RetentionEncoder(nlayers, nheads, dembed, nhidden, pdrop, has_wg=has_wg)
         self.projection = torch.nn.Linear(dembed, nvocab)
-        self.dropout = torch.nn.Dropout(0.0)
+        self.dropout = torch.nn.Dropout(pdrop)
 
     def forward(self, tokens : Int[Array, "batch tokens"],
                 apply_softmax : bool = False,
@@ -299,7 +325,7 @@ class GPTR(torch.nn.Module):
         return x
 
     def decode(self, tokens : Int[Array, "batch tokens"],
-               apply_positional_embedding : bool = False) -> Int[Array, "batch tokens"]:
+               apply_positional_embedding : bool = True) -> Int[Array, "batch tokens"]:
         #tokens : (..., ntokens)
         d = tokens.shape[-1]
         xe = self.embed(tokens)
@@ -316,7 +342,7 @@ class GPTR(torch.nn.Module):
 
 class GPTRConfig(object):
     def __init__(self, vocab_size,
-                 context_window,
+                 context_window=None,
                  embedding_dim=64,
                  nlayers=6,
                  nheads=4,
@@ -347,7 +373,7 @@ class GPTRConfig(object):
                           nheads,
                           nhidden,
                           nclasses)
-    
+
 
 class GPTRAutoregressive(torch.nn.Module):
     def __init__(self, config):
@@ -364,7 +390,7 @@ class GPTRAutoregressive(torch.nn.Module):
 
 
 class GPTRClassifier(torch.nn.Module):
-    def __init__(self, config, has_wg=True, use_stirling=False):
+    def __init__(self, config, has_wg=True, decoder_mode="default"):
         super().__init__()
         assert config.nclasses is not None
         self.model = GPTR(config.vocab_size,
@@ -374,7 +400,7 @@ class GPTRClassifier(torch.nn.Module):
                           config.nheads,
                           config.nhidden,
                           has_wg=has_wg,
-                          use_stirling=use_stirling)
+                          decoder_mode=decoder_mode)
         self.classifier = torch.nn.Linear(config.embedding_dim,
                                           config.nclasses)
 
@@ -383,8 +409,8 @@ class GPTRClassifier(torch.nn.Module):
         index_seq = lengths-1
         index_batch = torch.arange(x.shape[0])
         x = self.model.decode(x)
-        x = x[index_batch, index_seq, :]
         x = self.classifier(x)
+        x = x[index_batch, index_seq, :]
         output_cls = collections.namedtuple("output", ["logits"])
         res = output_cls(logits=x)
         return res

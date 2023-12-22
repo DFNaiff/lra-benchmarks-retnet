@@ -5,7 +5,7 @@ import torch
 import lightning
 
 from retnet import GPTR, GPTRConfig, GPTRClassifier
-from lra import ListOps, IMDB
+from lra import ListOps, IMDB, ParityDataset
 
 
 
@@ -70,7 +70,54 @@ class LLMClassifier(lightning.LightningModule):
             self.lr_warmup_config(),
         )
 
-def test_listops_mini(batch_split=32, num_workers=4, wg=False, stirling=False):
+
+def test_parity(batch_split=1, num_workers=4, wg=False, decoder_mode="default"):
+    dataset = ParityDataset(maxsize=20, minsize=10, ndata=100000)
+    dataset.setup()
+    orig_batch_size = 32
+    batch_size = orig_batch_size//batch_split
+    train_dataloader = dataset.train_dataloader(batch_size=batch_size, num_workers=num_workers)
+    valid_dataloader = dataset.val_dataloader(batch_size=batch_size, num_workers=num_workers)
+    total_epochs = 5000//(len(train_dataloader)//batch_split) + 1
+    config = GPTRConfig(vocab_size=dataset.vocab_size,
+                    context_window=12,
+                    nclasses=2,
+                    embedding_dim=32,
+                    nheads=1,
+                    nlayers=1,
+                    nhidden=128,
+                    pdrop=0.5
+                    )
+    model = GPTRClassifier(config, has_wg=wg, decoder_mode=decoder_mode)
+    module = LLMClassifier(model, warmup_steps=0, lr=1e-4)
+    trainer = lightning.Trainer(max_epochs=100, accumulate_grad_batches=1)
+    trainer.fit(model=module, train_dataloaders=train_dataloader, val_dataloaders=valid_dataloader)
+
+
+def test_parity_mini(batch_split=1, num_workers=4, wg=False, decoder_mode="default"):
+    dataset = ParityDataset(maxsize=5, minsize=2, ndata=20)
+    dataset.setup()
+    orig_batch_size = 4
+    batch_size = orig_batch_size//batch_split
+    train_dataloader = dataset.train_dataloader(batch_size=batch_size, num_workers=num_workers)
+    valid_dataloader = dataset.val_dataloader(batch_size=batch_size, num_workers=num_workers)
+    total_epochs = 5000//(len(train_dataloader)//batch_split) + 1
+    config = GPTRConfig(vocab_size=dataset.vocab_size,
+                    context_window=50,
+                    nclasses=2,
+                    embedding_dim=32,
+                    nheads=1,
+                    nlayers=1,
+                    nhidden=128,
+                    pdrop=0.1
+                    )
+    model = GPTRClassifier(config, has_wg=wg, decoder_mode=decoder_mode)
+    module = LLMClassifier(model, warmup_steps=0, lr=1e-4)
+    trainer = lightning.Trainer(max_epochs=1000, accumulate_grad_batches=1)
+    trainer.fit(model=module, train_dataloaders=train_dataloader, val_dataloaders=valid_dataloader)
+
+
+def test_listops_mini(batch_split=32, num_workers=4, wg=False, decoder_mode="default"):
     dataset = ListOps("listops-1000")
     dataset.setup()
     orig_batch_size = 32
@@ -84,15 +131,16 @@ def test_listops_mini(batch_split=32, num_workers=4, wg=False, stirling=False):
                     embedding_dim=16,
                     nheads=1,
                     nlayers=1,
-                    nhidden=64
+                    nhidden=64,
+                    pdrop=0.1
                     )
-    model = GPTRClassifier(config, has_wg=wg, use_stirling=stirling)
+    model = GPTRClassifier(config, has_wg=wg, decoder_mode=decoder_mode)
     module = LLMClassifier(model, warmup_steps=0)
     trainer = lightning.Trainer(max_epochs=2, accumulate_grad_batches=8)
     trainer.fit(model=module, train_dataloaders=train_dataloader, val_dataloaders=valid_dataloader)
 
 
-def test_listops(batch_split=8, num_workers=23, wg=False, stirling=False):
+def test_listops(batch_split=8, num_workers=23, wg=False, decoder_mode="default"):
     dataset = ListOps("listops-1000")
     dataset.setup()
     orig_batch_size = 32
@@ -101,19 +149,20 @@ def test_listops(batch_split=8, num_workers=23, wg=False, stirling=False):
     valid_dataloader = dataset.val_dataloader(batch_size=batch_size, num_workers=num_workers)
     total_epochs = 5000//(len(train_dataloader)//batch_split) + 1
     config = GPTRConfig(vocab_size=dataset.vocab_size,
-                    context_window=None,
+                    context_window=1500,
                     nclasses=10,
                     embedding_dim=512,
                     nheads=8,
                     nlayers=6,
-                    nhidden=2048
+                    nhidden=2048,
+                    pdrop=0.1
                     )
-    model = GPTRClassifier(config, has_wg=wg, use_stirling=stirling)
-    module = LLMClassifier(model, warmup_steps=0)
+    model = GPTRClassifier(config, has_wg=wg, decoder_mode=decoder_mode)
+    module = LLMClassifier(model, warmup_steps=1000*batch_split)
     trainer = lightning.Trainer(max_epochs=2, accumulate_grad_batches=8)
     trainer.fit(model=module, train_dataloaders=train_dataloader, val_dataloaders=valid_dataloader)
 
-def test_imdb(batch_split=16, num_workers=23, wg=False, stirling=False):
+def test_imdb(batch_split=16, num_workers=23, wg=False, decoder_mode="default"):
     dataset = IMDB("imdb")
     dataset.setup()
     orig_batch_size = 32
@@ -122,16 +171,17 @@ def test_imdb(batch_split=16, num_workers=23, wg=False, stirling=False):
     valid_dataloader = dataset.val_dataloader(batch_size=batch_size, num_workers=num_workers)
     total_epochs = 20000//(len(train_dataloader)//batch_split) + 1
     config = GPTRConfig(vocab_size=dataset.n_tokens,
-                    context_window=None,
+                    context_window=2500,
                     nclasses=2,
                     embedding_dim=512,
                     nheads=8,
                     nlayers=6,
-                    nhidden=2048
+                    nhidden=2048,
+                    pdrop=0.1
                     )
-    model = GPTRClassifier(config, has_wg=wg, use_stirling=stirling)
+    model = GPTRClassifier(config, has_wg=wg, decoder_mode=decoder_mode)
     module = LLMClassifier(model, warmup_steps=1000*batch_split)
-    trainer = lightning.Trainer(max_epochs=2, accumulate_grad_batches=8)
+    trainer = lightning.Trainer(max_epochs=2, accumulate_grad_batches=16)
     trainer.fit(model=module, train_dataloaders=train_dataloader, val_dataloaders=valid_dataloader)
 
 
@@ -140,19 +190,25 @@ def string_to_bool(s):
 
 
 if __name__ == "__main__":
-    TASKS = ['listops', 'imdb', 'listops-mini']
+    TASKS = ['listops', 'imdb', 'listops-mini', 'parity', 'parity-mini']
+    DECODER_MODES = ['default', 'stirling', 'transformer']
     parser = ArgumentParser()
     parser.add_argument("--wg", default="True", choices=["False", "True"], help="Whether to include WG in RetNet")
-    parser.add_argument("--stirling", default="False", choices=["False", "True"], help="Whether to use Stirling's RetNet")
+    parser.add_argument("--decoder-mode", default="default", choices=DECODER_MODES,
+                        help="Which mode for decoder to use")
     parser.add_argument("--task", default="listops", choices=TASKS,
                         help="choose an LRA dataset from available options")
     args = parser.parse_args()
     task_name = args.task
+    decoder_mode = args.decoder_mode
     wg = string_to_bool(args.wg)
-    stirling = string_to_bool(args.stirling)
     if task_name == "listops":
-        test_listops(wg=wg, stirling=stirling)
+        test_listops(wg=wg, decoder_mode=decoder_mode)
     elif task_name == "listops-mini":
-        test_listops_mini(wg=wg, stirling=stirling)
+        test_listops_mini(wg=wg, decoder_mode=decoder_mode)
     elif task_name == 'imdb':
-        test_imdb(wg=wg, stirling=stirling)
+        test_imdb(wg=wg, decoder_mode=decoder_mode)
+    elif task_name == 'parity':
+        test_parity(wg=wg, decoder_mode=decoder_mode)
+    elif task_name == 'parity-mini':
+        test_parity_mini(wg=wg, decoder_mode=decoder_mode)
