@@ -149,14 +149,14 @@ def test_listops(batch_split=8, num_workers=23, wg=False, decoder_mode="default"
     valid_dataloader = dataset.val_dataloader(batch_size=batch_size, num_workers=num_workers)
     total_epochs = 5000//(len(train_dataloader)//batch_split) + 1
     config = GPTRConfig(vocab_size=dataset.vocab_size,
-                    context_window=2100,
-                    nclasses=10,
-                    embedding_dim=512,
-                    nheads=8,
-                    nlayers=6,
-                    nhidden=2048,
-                    pdrop=0.1
-                    )
+                        context_window=2100,
+                        nclasses=10,
+                        embedding_dim=512,
+                        nheads=8,
+                        nlayers=6,
+                        nhidden=2048,
+                        pdrop=0.1
+                        )
     model = GPTRClassifier(config, has_wg=wg, decoder_mode=decoder_mode)
     module = LLMClassifier(model, warmup_steps=1000*batch_split)
     trainer = lightning.Trainer(max_epochs=2, accumulate_grad_batches=8)
