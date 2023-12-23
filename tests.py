@@ -50,9 +50,10 @@ class LLMClassifier(lightning.LightningModule):
             warmup_steps has been adjusted accordingly
             """
             if self.warmup_steps <= 0:
-                factor = 1
+                factor = 1/((step+1)**0.5)
             else:
                 factor = min(step / self.warmup_steps, 1)
+                factor = factor/(max(step, self.warmup_steps)**0.5)
             return factor
 
         opt1 = self.create_optimizer()
@@ -93,19 +94,23 @@ def run_test(training_config,
     trainer = lightning.Trainer(max_epochs=total_epochs,
                                 accumulate_grad_batches=batch_split,
                                 callbacks=[lr_monitor],
-                                log_every_n_steps=1)
+                                log_every_n_steps=1,
+                                val_check_interval=0.125,
+                                gradient_clip_val=0.5)
     trainer.fit(model=module,
                 train_dataloaders=train_dataloader,
                 val_dataloaders=valid_dataloader)
 
 
 def test_parity(batch_split=1, num_workers=4, wg=False, decoder_mode="default"):
-    orig_batch_size = 32
-    batch_split = 1
+    orig_batch_size = 16
+    batch_split = 2
     batch_size = orig_batch_size//batch_split
-    dataset = ParityDataset(maxsize=20, minsize=5, ndata=10000)
-    # dataset = BinaryMarkovDataset(ndata=10000, maxsize=20, minsize=5,
-                                #   train_split=0.7)
+    # dataset = ParityDataset(maxsize=20, minsize=5, ndata=10000)
+    dataset = BinaryMarkovDataset(ndata=10000,
+                                  probability_retain=[0.9, 0.5],
+                                  maxsize=20, minsize=5,
+                                  train_split=0.8,)
     dataset.setup()
     train_dataloader = dataset.train_dataloader(batch_size=batch_size, num_workers=num_workers)
     valid_dataloader = dataset.val_dataloader(batch_size=batch_size, num_workers=num_workers)
@@ -124,7 +129,7 @@ def test_parity(batch_split=1, num_workers=4, wg=False, decoder_mode="default"):
                        'batch_split': batch_split,
                        'total_epochs': 2,
                        'lr': 0.05,
-                       'warmup_steps': 1000}
+                       'warmup_steps': 2*1000}
     run_test(training_config, model_config, train_dataloader, valid_dataloader)
 
 
