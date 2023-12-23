@@ -801,8 +801,8 @@ class ParityDataset(BinarySequenceOpsDataset):
 
 class MajorityDataset(BinarySequenceOpsDataset):
     def sequence_operation(self, sequences, n):
-        return sequences[:, -2]
-        # return ((sequences.sum(dim=1) - n//2) > 0).long()
+        # return sequences[:, 0]
+        return ((sequences.sum(dim=1) - n//2) > 0).long()
 
 
 class BinaryMarkovDataset(CustomSequenceDataset):
