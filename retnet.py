@@ -267,13 +267,14 @@ class GPTEncoder(torch.nn.Module):
         encoder_layer = torch.nn.TransformerEncoderLayer(dmodel,
                                                          nheads,
                                                          nhidden,
-                                                         dropout=pdrop)
+                                                         dropout=pdrop,
+                                                         batch_first=True)
         self.encoder = torch.nn.TransformerEncoder(encoder_layer,
                                                    nlayers)
     
     def forward(self, x):
         mask = self.generate_square_subsequent_mask(x.shape[1]).to(x.device)
-        return self.encoder(x, mask, is_causal=True)
+        return self.encoder(x, mask, is_causal=False)
 
     def generate_square_subsequent_mask(self, sz):
         mask = (torch.triu(torch.ones(sz, sz)) == 1).transpose(0, 1)
@@ -335,8 +336,8 @@ class GPTR(torch.nn.Module):
             d = tokens.shape[-1]
             pos = self.pos[:d, :]
             xe += pos
-        x = self.dropout(xe)
-        x = self.decoder(x)
+        xe = self.dropout(xe)
+        x = self.decoder(xe)
         return x
 
 

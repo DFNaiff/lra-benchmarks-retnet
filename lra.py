@@ -710,43 +710,23 @@ class AAN(SequenceDataset):
         return dataset, tokenizer, vocab
 
 
-class ParityDataset(torch.utils.data.Dataset):
-    def __init__(self, maxsize=10, minsize=3, ndata=1000,
-                 train_split=0.8):
-        # max_possible_data = 2**maxsize - 2**(minsize-1)
-        max_possible_data = sum(2**i for i in range(minsize, maxsize+1))
-        assert ndata <= max_possible_data
+class CustomSequenceDataset(torch.utils.data.Dataset):
+    def __init__(self, ndata, train_split, vocab_size):
         self.ndata = ndata
-        self.max_possible_data = max_possible_data
-        self.maxsize = maxsize
-        self.minsize = minsize
         self.train_split = train_split
-        self.vocab_size = 2
-
-    def setup(self, seed=42):
-        with temp_seed(seed):
-            inds = np.random.choice(self.max_possible_data, self.ndata, replace=False)
-            data = []
-            counter = 0
-            for n in range(self.minsize, self.maxsize+1):
-                sequences, labels, lengths = self.list_of_binary_strings_n(n)
-                for k in range(2**n):
-                    if counter in inds:
-                        data.append((sequences[k], labels[k], lengths[k]))
-                    counter += 1
-            ind = np.random.permutation(len(data))
-        self.data = [data[i] for i in ind]
-        self.train_ind = int(self.train_split * len(self.data))
+        self.vocab_size = vocab_size
 
     def train_dataloader(self, *args, **kwargs):
         return torch.utils.data.DataLoader(self.data[:self.train_ind],
                                            *args, **kwargs,
-                                           collate_fn=self.collate_fn)
+                                           collate_fn=self.collate_fn,
+                                           shuffle=True)
 
     def val_dataloader(self, *args, **kwargs):
         return torch.utils.data.DataLoader(self.data[self.train_ind:],
                                            *args, **kwargs,
-                                           collate_fn=self.collate_fn)
+                                           collate_fn=self.collate_fn,
+                                           shuffle=True)
 
     def collate_fn(self, data):
         """
@@ -763,14 +743,10 @@ class ParityDataset(torch.utils.data.Dataset):
             features[i, :len(example)] = example
         return features, labels, {'lengths': lengths}
 
-    def list_of_binary_strings_n(self, n):
-        sequences = list(map(list, itertools.product(range(2), repeat=n)))
-        sequences = torch.tensor(sequences, dtype=torch.long)
-        lengths = n * torch.ones(len(sequences), dtype=torch.long)
-        # labels = sequences[:, 0]
-        # labels = sequences.sum(dim=1) % 2
-        labels = ((sequences.sum(dim=1) - n//2) > 0).long()
-        return sequences, labels, lengths
+    @property
+    def train_ind(self):
+        train_ind = int(self.train_split * len(self.data))
+        return train_ind
 
     def __len__(self):
         return len(self.data)
@@ -778,9 +754,88 @@ class ParityDataset(torch.utils.data.Dataset):
     def __getitem__(self, idx):
         return self.data[idx]
 
+    def setup(self, seed=42):
+        raise NotImplementedError
+    
 
-            # data.append((sequences, labels, lengths))
-        # for n in range(self.minsize, self.maxsize+1):
-            # sequences, labels, lengths = list_of_binary_strings_n(n)
-            # data.append((sequences, labels, lengths))
-        # return data
+
+class BinarySequenceOpsDataset(CustomSequenceDataset):
+    def __init__(self, maxsize=10, minsize=3, ndata=1000,
+                 train_split=0.8):
+        max_possible_data = sum(2**i for i in range(minsize, maxsize+1))
+        assert ndata <= max_possible_data
+        super().__init__(ndata, train_split, 2)
+        self.max_possible_data = max_possible_data
+        self.maxsize = maxsize
+        self.minsize = minsize
+
+    def setup(self, seed=42):
+        with temp_seed(seed):
+            inds = np.random.choice(self.max_possible_data, self.ndata, replace=False)
+            data = []
+            counter = 0
+            for n in range(self.minsize, self.maxsize+1):
+                sequences, labels, lengths = self.list_of_binary_strings_n(n)
+                for k in range(2**n):
+                    if counter in inds:
+                        data.append((sequences[k], labels[k], lengths[k]))
+                    counter += 1
+            ind = np.random.permutation(len(data))
+        self.data = [data[i] for i in ind]
+
+    def list_of_binary_strings_n(self, n):
+        sequences = list(map(list, itertools.product(range(2), repeat=n)))
+        sequences = torch.tensor(sequences, dtype=torch.long)
+        lengths = n * torch.ones(len(sequences), dtype=torch.long)
+        labels = self.sequence_operation(sequences, n)
+        # labels = sequences[:, 0]
+        # labels = sequences.sum(dim=1) % 2
+        # labels = ((sequences.sum(dim=1) - n//2) > 0).long()
+        return sequences, labels, lengths
+
+
+class ParityDataset(BinarySequenceOpsDataset):
+    def sequence_operation(self, sequences, n):
+        return sequences.sum(dim=1) % 2
+    
+
+class MajorityDataset(BinarySequenceOpsDataset):
+    def sequence_operation(self, sequences, n):
+        return sequences[:, -2]
+        # return ((sequences.sum(dim=1) - n//2) > 0).long()
+
+
+class BinaryMarkovDataset(CustomSequenceDataset):
+    def __init__(self, ndata=1000, probability_retain=[0.8, 0.2],
+                 maxsize=10, minsize=3,
+                 train_split=0.7):
+        self.probability_retain = probability_retain
+        vocab_size = len(probability_retain)
+        super().__init__(ndata, train_split, vocab_size)
+        max_possible_data = sum(self.vocab_size**i
+                                for i in range(minsize, maxsize+1))
+        assert ndata <= max_possible_data
+        self.maxsize = maxsize
+        self.minsize = minsize
+
+    def setup(self, seed=42):
+        with temp_seed(seed):
+            self.data = []
+            for i in range(self.ndata):
+                n = np.random.randint(self.minsize, self.maxsize+1)
+                sequence, label, length = self.make_markov_chain(i, n)
+                self.data.append((sequence, label, length))
+        
+    def make_markov_chain(self, i, n):
+        which = i%self.vocab_size
+        p = self.probability_retain[which]
+        sequence = torch.zeros(n, dtype=torch.long)
+        val = 0
+        for i in range(n):
+            change = np.random.rand() < p
+            if change:
+                val = 1 - val
+            sequence[i] = val
+        length = torch.tensor(n, dtype=torch.long)
+        label = torch.tensor(which, dtype=torch.long)
+        return sequence, label, length
