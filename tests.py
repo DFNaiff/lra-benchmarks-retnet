@@ -103,7 +103,7 @@ def test_parity(batch_split=1, num_workers=4, wg=False, decoder_mode="default"):
     orig_batch_size = 32
     batch_split = 1
     batch_size = orig_batch_size//batch_split
-    dataset = MajorityDataset(maxsize=20, minsize=5, ndata=10000)
+    dataset = ParityDataset(maxsize=20, minsize=5, ndata=10000)
     # dataset = BinaryMarkovDataset(ndata=10000, maxsize=20, minsize=5,
                                 #   train_split=0.7)
     dataset.setup()
@@ -132,7 +132,7 @@ def test_parity_mini(batch_split=1, num_workers=4, wg=False, decoder_mode="defau
     orig_batch_size = 4
     batch_split = 1
     batch_size = orig_batch_size//batch_split
-    dataset = MajorityDataset(maxsize=5, minsize=2, ndata=30)
+    dataset = ParityDataset(maxsize=5, minsize=2, ndata=30)
     dataset.setup()
     train_dataloader = dataset.train_dataloader(batch_size=batch_size, num_workers=num_workers)
     valid_dataloader = dataset.val_dataloader(batch_size=batch_size, num_workers=num_workers)

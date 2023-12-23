@@ -726,7 +726,7 @@ class CustomSequenceDataset(torch.utils.data.Dataset):
         return torch.utils.data.DataLoader(self.data[self.train_ind:],
                                            *args, **kwargs,
                                            collate_fn=self.collate_fn,
-                                           shuffle=True)
+                                           shuffle=False)
 
     def collate_fn(self, data):
         """
