@@ -3,6 +3,7 @@ from argparse import ArgumentParser
 
 import torch
 import lightning
+import lightning.pytorch.callbacks as callbacks
 
 from retnet import GPTR, GPTRConfig, GPTRClassifier
 from lra import ListOps, ListOpsTiny, IMDB, ParityDataset
@@ -51,6 +52,7 @@ class LLMClassifier(lightning.LightningModule):
                 factor = 1
             else:
                 factor = min(step / self.warmup_steps, 1)
+            print(step, factor)
             return factor
 
         opt1 = self.create_optimizer()
@@ -71,15 +73,40 @@ class LLMClassifier(lightning.LightningModule):
         )
 
 
+def run_test(training_config,
+             model_config,
+             train_dataloader,
+             valid_dataloader):
+    decoder_mode = training_config['decoder_mode']
+    has_wg = training_config['wg']
+    orig_batch_size = training_config['orig_batch_size']
+    batch_split = training_config['batch_split']
+    total_epochs = training_config['total_epochs']
+    lr = training_config['lr']
+    warmup_steps = training_config['warmup_steps']
+
+    model = GPTRClassifier(model_config,
+                           has_wg=has_wg,
+                           decoder_mode=decoder_mode)
+    module = LLMClassifier(model, warmup_steps=warmup_steps, lr=lr)
+    lr_monitor = callbacks.LearningRateMonitor(logging_interval='step')
+    trainer = lightning.Trainer(max_epochs=total_epochs,
+                                accumulate_grad_batches=batch_split,
+                                callbacks=[lr_monitor])
+    trainer.fit(model=module,
+                train_dataloaders=train_dataloader,
+                val_dataloaders=valid_dataloader)
+
+
 def test_parity(batch_split=1, num_workers=4, wg=False, decoder_mode="default"):
-    dataset = ParityDataset(maxsize=20, minsize=10, ndata=100000)
-    dataset.setup()
     orig_batch_size = 32
+    batch_split = 1
     batch_size = orig_batch_size//batch_split
+    dataset = ParityDataset(maxsize=10, minsize=5, ndata=1000)
+    dataset.setup()
     train_dataloader = dataset.train_dataloader(batch_size=batch_size, num_workers=num_workers)
     valid_dataloader = dataset.val_dataloader(batch_size=batch_size, num_workers=num_workers)
-    total_epochs = 5000//(len(train_dataloader)//batch_split) + 1
-    config = GPTRConfig(vocab_size=dataset.vocab_size,
+    model_config = GPTRConfig(vocab_size=dataset.vocab_size,
                     context_window=12,
                     nclasses=2,
                     embedding_dim=32,
@@ -88,56 +115,78 @@ def test_parity(batch_split=1, num_workers=4, wg=False, decoder_mode="default"):
                     nhidden=128,
                     pdrop=0.5
                     )
-    model = GPTRClassifier(config, has_wg=wg, decoder_mode=decoder_mode)
-    module = LLMClassifier(model, warmup_steps=0, lr=1e-4)
-    trainer = lightning.Trainer(max_epochs=100, accumulate_grad_batches=1)
-    trainer.fit(model=module, train_dataloaders=train_dataloader, val_dataloaders=valid_dataloader)
+    training_config = {'decoder_mode': decoder_mode,
+                       'wg': wg,
+                       'orig_batch_size': orig_batch_size,
+                       'batch_split': batch_split,
+                       'total_epochs': 100,
+                       'lr': 1e-4,
+                       'warmup_steps': 0}
+    run_test(training_config, model_config, train_dataloader, valid_dataloader)
 
 
 def test_parity_mini(batch_split=1, num_workers=4, wg=False, decoder_mode="default"):
-    dataset = ParityDataset(maxsize=5, minsize=2, ndata=20)
-    dataset.setup()
-    orig_batch_size = 4
+    orig_batch_size = 32
+    batch_split = 1
     batch_size = orig_batch_size//batch_split
+    dataset = ParityDataset(maxsize=5, minsize=2, ndata=30)
+    dataset.setup()
     train_dataloader = dataset.train_dataloader(batch_size=batch_size, num_workers=num_workers)
     valid_dataloader = dataset.val_dataloader(batch_size=batch_size, num_workers=num_workers)
-    total_epochs = 5000//(len(train_dataloader)//batch_split) + 1
-    config = GPTRConfig(vocab_size=dataset.vocab_size,
-                    context_window=50,
+    model_config = GPTRConfig(vocab_size=dataset.vocab_size,
+                    context_window=12,
                     nclasses=2,
                     embedding_dim=32,
                     nheads=1,
                     nlayers=1,
                     nhidden=128,
-                    pdrop=0.1
+                    pdrop=0.5
                     )
-    model = GPTRClassifier(config, has_wg=wg, decoder_mode=decoder_mode)
-    module = LLMClassifier(model, warmup_steps=0, lr=1e-4)
-    trainer = lightning.Trainer(max_epochs=1000, accumulate_grad_batches=1)
-    trainer.fit(model=module, train_dataloaders=train_dataloader, val_dataloaders=valid_dataloader)
+    training_config = {'decoder_mode': decoder_mode,
+                       'wg': wg,
+                       'orig_batch_size': orig_batch_size,
+                       'batch_split': batch_split,
+                       'total_epochs': 100,
+                       'lr': 1e-4,
+                       'warmup_steps': 0}
+    run_test(training_config, model_config, train_dataloader, valid_dataloader)
 
 
 def test_listops_mini(batch_split=1, num_workers=4, wg=False, decoder_mode="default"):
     dataset = ListOpsTiny("listops-tiny")
     dataset.setup()
+
     orig_batch_size = 32
+    batch_split = 1
     batch_size = orig_batch_size//batch_split
-    train_dataloader = dataset.train_dataloader(batch_size=batch_size, num_workers=num_workers)
-    valid_dataloader = dataset.val_dataloader(batch_size=batch_size, num_workers=num_workers)
+    batch_size = orig_batch_size//batch_split
+    train_dataloader = dataset.train_dataloader(batch_size=batch_size,
+                                                num_workers=num_workers)
+    valid_dataloader = dataset.val_dataloader(batch_size=batch_size,
+                                              num_workers=num_workers)
     total_epochs = 5000//(len(train_dataloader)//batch_split) + 1
-    config = GPTRConfig(vocab_size=dataset.vocab_size,
-                    context_window=2048,
-                    nclasses=10,
-                    embedding_dim=64,
-                    nheads=4,
-                    nlayers=2,
-                    nhidden=256,
-                    pdrop=0.1
-                    )
-    model = GPTRClassifier(config, has_wg=wg, decoder_mode=decoder_mode)
-    module = LLMClassifier(model, warmup_steps=0)
-    trainer = lightning.Trainer(max_epochs=2, accumulate_grad_batches=8)
-    trainer.fit(model=module, train_dataloaders=train_dataloader, val_dataloaders=valid_dataloader)
+
+    train_dataloader = dataset.train_dataloader(batch_size=batch_size,
+                                                num_workers=num_workers)
+    valid_dataloader = dataset.val_dataloader(batch_size=batch_size,
+                                              num_workers=num_workers)
+    model_config = GPTRConfig(vocab_size=dataset.vocab_size,
+                        context_window=2048,
+                        nclasses=10,
+                        embedding_dim=64,
+                        nheads=4,
+                        nlayers=2,
+                        nhidden=256,
+                        pdrop=0.1
+                        )
+    training_config = {'decoder_mode': decoder_mode,
+                       'wg': wg,
+                       'orig_batch_size': orig_batch_size,
+                       'batch_split': batch_split,
+                       'total_epochs': total_epochs,
+                       'lr': 1e-4,
+                       'warmup_steps': 1000}
+    run_test(training_config, model_config, train_dataloader, valid_dataloader)
 
 
 def test_listops(batch_split=8, num_workers=23, wg=False, decoder_mode="default"):
