@@ -6,3 +6,4 @@ datasets/*
 old/*
 output_dir/*
 runs/*
+lightning_logs/*
