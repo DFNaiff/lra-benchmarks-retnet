@@ -78,7 +78,7 @@ def run_test(training_config,
              model_config,
              train_dataloader,
              valid_dataloader,
-             val_check_interval=1):
+             val_check_interval=1.0):
     decoder_mode = training_config['decoder_mode']
     has_wg = training_config['wg']
     orig_batch_size = training_config['orig_batch_size']
@@ -233,7 +233,7 @@ def test_imdb(batch_split=32, num_workers=23, wg=False, decoder_mode="default"):
     orig_batch_size = 32
     batch_size = orig_batch_size//batch_split
     train_dataloader = dataset.train_dataloader(batch_size=batch_size, num_workers=num_workers)
-    valid_dataloader = dataset.val_dataloader(batch_size=batch_size, num_workers=num_workers)
+    valid_dataloader = dataset.test_dataloader(batch_size=batch_size, num_workers=num_workers)
     total_epochs = 20000//(len(train_dataloader)//batch_split) + 1
     model_config = GPTRConfig(vocab_size=dataset.n_tokens,
                     context_window=4100,
