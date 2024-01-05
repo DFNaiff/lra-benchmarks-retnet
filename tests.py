@@ -6,7 +6,7 @@ import lightning
 import lightning.pytorch.callbacks as callbacks
 
 from retnet import GPTR, GPTRConfig, GPTRClassifier
-from lra import (ListOps, ListOpsTiny, IMDB,
+from lra import (ListOps, ListOpsTiny, IMDB, LRACIFAR10,
                  ParityDataset, MajorityDataset, BinaryMarkovDataset)
 
 
@@ -254,12 +254,38 @@ def test_imdb(batch_split=32, num_workers=23, wg=False, decoder_mode="default"):
     run_test(training_config, model_config, train_dataloader, valid_dataloader)
 
 
+def test_cifar10(batch_split=2, num_workers=23, wg=False, decoder_mode="default"):
+    dataset = LRACIFAR10()
+    dataset.setup()
+    orig_batch_size = 256
+    batch_size = orig_batch_size//batch_split
+    train_dataloader = dataset.train_dataloader(batch_size=batch_size, num_workers=num_workers)
+    valid_dataloader = dataset.test_dataloader(batch_size=batch_size, num_workers=num_workers)
+    total_epochs = 200
+    model_config = GPTRConfig(vocab_size=dataset.vocab_size,
+                    context_window=dataset.lmax,
+                    nclasses=dataset.doutput,
+                    embedding_dim=128,
+                    nheads=4,
+                    nlayers=3,
+                    nhidden=128,
+                    pdrop=0.3
+                    )
+    training_config = {'decoder_mode': decoder_mode,
+                       'wg': wg,
+                       'orig_batch_size': orig_batch_size,
+                       'batch_split': batch_split,
+                       'total_epochs': total_epochs,
+                       'lr': 0.1,
+                       'warmup_steps': 1000}
+    run_test(training_config, model_config, train_dataloader, valid_dataloader)
+
 def string_to_bool(s):
     return True if s == "True" else False
 
 
 if __name__ == "__main__":
-    TASKS = ['listops', 'imdb', 'listops-mini', 'parity', 'parity-mini']
+    TASKS = ['listops', 'imdb', 'cifar10', 'listops-mini', 'parity', 'parity-mini']
     DECODER_MODES = ['default', 'stirling', 'transformer']
     parser = ArgumentParser()
     parser.add_argument("--wg", default="True", choices=["False", "True"], help="Whether to include WG in RetNet")
@@ -277,7 +303,11 @@ if __name__ == "__main__":
         test_listops_mini(wg=wg, decoder_mode=decoder_mode)
     elif task_name == 'imdb':
         test_imdb(wg=wg, decoder_mode=decoder_mode)
+    elif task_name == 'cifar10':
+        test_cifar10(wg=wg, decoder_mode=decoder_mode)
     elif task_name == 'parity':
         test_parity(wg=wg, decoder_mode=decoder_mode)
     elif task_name == 'parity-mini':
         test_parity_mini(wg=wg, decoder_mode=decoder_mode)
+    else:
+        raise ValueError

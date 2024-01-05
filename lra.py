@@ -710,6 +710,53 @@ class AAN(SequenceDataset):
         return dataset, tokenizer, vocab
 
 
+class LRACIFAR10(torch.utils.data.Dataset):
+    def __init__(self):
+        self.lmax = 32**2
+        self.doutput = 10
+        self.vocab_size = 256
+
+    def setup(self):
+
+        class Flattener(torch.nn.Module):
+            def forward(self, img):
+                return img.flatten().long()
+
+        transform = torchvision.transforms.Compose([
+                torchvision.transforms.PILToTensor(),
+                torchvision.transforms.Grayscale(),
+                Flattener()
+            ])
+
+        self.train_dataset = torchvision.datasets.CIFAR10(root=default_data_path,
+                                                          download=True,
+                                                          transform=transform)
+        self.test_dataset = torchvision.datasets.CIFAR10(root=default_data_path,
+                                                          download=True,
+                                                          train=False,
+                                                          transform=transform)
+
+    def train_dataloader(self, *args, **kwargs):
+        return torch.utils.data.DataLoader(self.train_dataset,
+                                           *args, **kwargs,
+                                           collate_fn=self.collate_fn,
+                                           shuffle=True)
+
+    def test_dataloader(self, *args, **kwargs):
+        return torch.utils.data.DataLoader(self.test_dataset,
+                                           *args, **kwargs,
+                                           collate_fn=self.collate_fn,
+                                           shuffle=False)
+
+    def collate_fn(self, data):
+        features, labels = zip(*data)
+        features = torch.stack(features, axis=0)
+        labels = torch.tensor(labels, dtype=torch.long)
+        lengths = features.shape[-1]*torch.ones(features.shape[0], dtype=torch.long)
+        return features, labels, {'lengths': lengths}
+
+
+
 class CustomSequenceDataset(torch.utils.data.Dataset):
     def __init__(self, ndata, train_split, vocab_size):
         self.ndata = ndata
@@ -756,7 +803,7 @@ class CustomSequenceDataset(torch.utils.data.Dataset):
 
     def setup(self, seed=42):
         raise NotImplementedError
-    
+
 
 
 class BinarySequenceOpsDataset(CustomSequenceDataset):
@@ -797,7 +844,7 @@ class BinarySequenceOpsDataset(CustomSequenceDataset):
 class ParityDataset(BinarySequenceOpsDataset):
     def sequence_operation(self, sequences, n):
         return sequences.sum(dim=1) % 2
-    
+
 
 class MajorityDataset(BinarySequenceOpsDataset):
     def sequence_operation(self, sequences, n):
@@ -825,7 +872,7 @@ class BinaryMarkovDataset(CustomSequenceDataset):
                 n = np.random.randint(self.minsize, self.maxsize+1)
                 sequence, label, length = self.make_markov_chain(i, n)
                 self.data.append((sequence, label, length))
-        
+
     def make_markov_chain(self, i, n):
         which = i%self.vocab_size
         p = self.probability_retain[which]
