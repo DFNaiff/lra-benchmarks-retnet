@@ -297,6 +297,7 @@ class GPTR(torch.nn.Module):
                  has_wg : bool = False,
                  decoder_mode : str = "default"):
         super().__init__()
+        self.decoder_mode = decoder_mode
         assert (decoder_mode in ["default", "stirling", "transformer"])
         self.nvocab = nvocab
         self.nctx = nctx
@@ -330,7 +331,9 @@ class GPTR(torch.nn.Module):
                apply_positional_embedding : bool = True) -> Int[Array, "batch tokens"]:
         #tokens : (..., ntokens)
         d = tokens.shape[-1]
-        xe = self.embed(tokens)
+        if self.nctx is not None:
+            tokens = tokens[..., :self.nctx]
+        xe = self.embed(tokens) #(..., ntokens, dembed)
         if apply_positional_embedding:
             if self.nctx is None:
                 raise ValueError
@@ -411,8 +414,11 @@ class GPTRClassifier(torch.nn.Module):
     def forward(self, input_ids, lengths):
         x = input_ids
         index_seq = lengths-1
+        if self.model.nctx is not None:
+            index_seq = torch.clamp(index_seq, max=self.model.nctx-1)
         index_batch = torch.arange(x.shape[0])
-        x = self.model.decode(x)
+        apply_positional_embedding = True if self.model.decoder_mode == "transformer" else False
+        x = self.model.decode(x, apply_positional_embedding=apply_positional_embedding)
         x = self.classifier(x)
         x = x[index_batch, index_seq, :]
         output_cls = collections.namedtuple("output", ["logits"])

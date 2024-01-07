@@ -254,6 +254,33 @@ def test_imdb(batch_split=32, num_workers=23, wg=False, decoder_mode="default"):
     run_test(training_config, model_config, train_dataloader, valid_dataloader)
 
 
+def test_imdb_mini(batch_split=32, num_workers=4, wg=False, decoder_mode="default"):
+    dataset = IMDB("imdb")
+    dataset.setup()
+    orig_batch_size = 32
+    batch_size = orig_batch_size//batch_split
+    train_dataloader = dataset.train_dataloader(batch_size=batch_size, num_workers=num_workers)
+    valid_dataloader = dataset.test_dataloader(batch_size=batch_size, num_workers=num_workers)
+    total_epochs = 20000//(len(train_dataloader)//batch_split) + 1
+    model_config = GPTRConfig(vocab_size=dataset.n_tokens,
+                    context_window=500,
+                    nclasses=2,
+                    embedding_dim=512,
+                    nheads=8,
+                    nlayers=2,
+                    nhidden=2048,
+                    pdrop=0.1
+                    )
+    training_config = {'decoder_mode': decoder_mode,
+                       'wg': wg,
+                       'orig_batch_size': orig_batch_size,
+                       'batch_split': batch_split,
+                       'total_epochs': total_epochs,
+                       'lr': 0.05,
+                       'warmup_steps': 1000}
+    run_test(training_config, model_config, train_dataloader, valid_dataloader)
+
+
 def test_cifar10(batch_split=2, num_workers=23, wg=False, decoder_mode="default"):
     dataset = LRACIFAR10()
     dataset.setup()
@@ -285,7 +312,7 @@ def string_to_bool(s):
 
 
 if __name__ == "__main__":
-    TASKS = ['listops', 'imdb', 'cifar10', 'listops-mini', 'parity', 'parity-mini']
+    TASKS = ['listops', 'imdb', 'imdb-mini', 'cifar10', 'listops-mini', 'parity', 'parity-mini']
     DECODER_MODES = ['default', 'stirling', 'transformer']
     parser = ArgumentParser()
     parser.add_argument("--wg", default="True", choices=["False", "True"], help="Whether to include WG in RetNet")
@@ -303,6 +330,8 @@ if __name__ == "__main__":
         test_listops_mini(wg=wg, decoder_mode=decoder_mode)
     elif task_name == 'imdb':
         test_imdb(wg=wg, decoder_mode=decoder_mode)
+    elif task_name == 'imdb-mini':
+        test_imdb_mini(wg=wg, decoder_mode=decoder_mode)
     elif task_name == 'cifar10':
         test_cifar10(wg=wg, decoder_mode=decoder_mode)
     elif task_name == 'parity':
