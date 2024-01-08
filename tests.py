@@ -266,10 +266,10 @@ def test_cifar10(batch_split=2, num_workers=23, wg=False, decoder_mode="default"
                     context_window=dataset.lmax,
                     nclasses=dataset.doutput,
                     embedding_dim=128,
-                    nheads=4,
-                    nlayers=3,
+                    nheads=1,
+                    nlayers=1,
                     nhidden=128,
-                    pdrop=0.3
+                    pdrop=0.25
                     )
     training_config = {'decoder_mode': decoder_mode,
                        'wg': wg,
