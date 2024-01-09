@@ -187,6 +187,23 @@ class IMDB(SequenceDataset):
     def _cache_dir_name(self):
         return f"l_max-{self.l_max}-level-{self.level}-min_freq-{self.min_freq}-append_bos-{self.append_bos}-append_eos-{self.append_eos}"
 
+
+class IMDBMini(IMDB):
+    @property
+    def init_defaults(self):
+        return {
+            "l_max": 1000,
+            "level": "char",
+            "min_freq": 15,
+            "seed": 42,
+            "val_split": 0.0,
+            "append_bos": False,
+            "append_eos": True,
+            # 'max_vocab': 135,
+            "n_workers": 4,  # Only used for tokenizing dataset before caching
+        }
+
+
 class TabularDataset(torch.utils.data.Dataset):
     def __init__(
         self,
@@ -756,7 +773,6 @@ class LRACIFAR10(torch.utils.data.Dataset):
         return features, labels, {'lengths': lengths}
 
 
-
 class CustomSequenceDataset(torch.utils.data.Dataset):
     def __init__(self, ndata, train_split, vocab_size):
         self.ndata = ndata
@@ -803,7 +819,6 @@ class CustomSequenceDataset(torch.utils.data.Dataset):
 
     def setup(self, seed=42):
         raise NotImplementedError
-
 
 
 class BinarySequenceOpsDataset(CustomSequenceDataset):

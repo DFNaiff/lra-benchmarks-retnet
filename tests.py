@@ -6,7 +6,7 @@ import lightning
 import lightning.pytorch.callbacks as callbacks
 
 from retnet import GPTR, GPTRConfig, GPTRClassifier
-from lra import (ListOps, ListOpsTiny, IMDB, LRACIFAR10,
+from lra import (ListOps, ListOpsTiny, IMDB, IMDBMini, LRACIFAR10,
                  ParityDataset, MajorityDataset, BinaryMarkovDataset)
 
 
@@ -250,24 +250,24 @@ def test_imdb(batch_split=32, num_workers=23, wg=False, decoder_mode="default"):
                        'batch_split': batch_split,
                        'total_epochs': total_epochs,
                        'lr': 0.05,
-                       'warmup_steps': 1000}
+                       'warmup_steps': 8000}
     run_test(training_config, model_config, train_dataloader, valid_dataloader)
 
 
-def test_imdb_mini(batch_split=32, num_workers=4, wg=False, decoder_mode="default"):
-    dataset = IMDB("imdb")
+def test_imdb_mini(batch_split=8, num_workers=23, wg=False, decoder_mode="default"):
+    dataset = IMDBMini("imdb")
     dataset.setup()
     orig_batch_size = 32
     batch_size = orig_batch_size//batch_split
     train_dataloader = dataset.train_dataloader(batch_size=batch_size, num_workers=num_workers)
     valid_dataloader = dataset.test_dataloader(batch_size=batch_size, num_workers=num_workers)
-    total_epochs = 20000//(len(train_dataloader)//batch_split) + 1
+    total_epochs = 20000//(len(train_dataloader)//batch_split)
     model_config = GPTRConfig(vocab_size=dataset.n_tokens,
-                    context_window=500,
+                    context_window=1000,
                     nclasses=2,
                     embedding_dim=512,
                     nheads=8,
-                    nlayers=2,
+                    nlayers=6,
                     nhidden=2048,
                     pdrop=0.1
                     )
@@ -277,7 +277,7 @@ def test_imdb_mini(batch_split=32, num_workers=4, wg=False, decoder_mode="defaul
                        'batch_split': batch_split,
                        'total_epochs': total_epochs,
                        'lr': 0.05,
-                       'warmup_steps': 1000}
+                       'warmup_steps': 8000}
     run_test(training_config, model_config, train_dataloader, valid_dataloader)
 
 
@@ -306,6 +306,7 @@ def test_cifar10(batch_split=2, num_workers=23, wg=False, decoder_mode="default"
                        'lr': 0.1,
                        'warmup_steps': 1000}
     run_test(training_config, model_config, train_dataloader, valid_dataloader)
+
 
 def string_to_bool(s):
     return True if s == "True" else False

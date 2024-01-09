@@ -31,6 +31,27 @@ def make_angles(x : Float[Array, "nbatch nseq nhead dhead"],
     return nangle
 
 
+class SinusoidalEncoding(torch.nn.Module):
+    def __init__(self, dembed, denominator=10000.0):
+        super().__init__()
+        self.dembed = dembed
+        self.denominator = denominator
+        indexes = torch.arange(start=0, end=dembed, step=2) #[dmodel//2]
+        div_term = denominator ** (indexes / dembed) #[dmodel//2]
+        self.register_buffer('div_term', div_term)
+
+    def forward(self, x, offset=0):
+        #x : [..., seq_len]
+        #returns : [batch, seq_len, dembed]
+        positions = torch.arange(start=offset, end=offset+x.shape[1], step=1, device=x.device) #[seq_len]
+        sin = torch.sin(positions.unsqueeze(-1) / self.div_term) #[seq_len, dembed//2]
+        cos = torch.cos(positions.unsqueeze(-1) / self.div_term) #[seq_len, dembed//2]
+        sin_cos = torch.stack([sin, cos], axis=-1).flatten(start_dim=-2)
+        sin_cos = torch.broadcast_to(sin_cos, x.shape[:-1] + sin_cos.shape[-2:]) #[..., seq_len, dembed]
+        return sin_cos
+
+
+
 class XPos2(torch.nn.Module):
     """
         The module implementing rotation for the complex plane
@@ -219,6 +240,7 @@ class FFNBlock(torch.nn.Module):
     def forward(self, x : Float[Array, "batch seq dim"]) -> Float[Array, "batch seq dim"]:
         return self.mlp(x)
 
+
 class RetBlock(torch.nn.Module):
     """
     Implements an alternative version of GPT-2 encoder,
@@ -302,9 +324,10 @@ class GPTR(torch.nn.Module):
         self.nvocab = nvocab
         self.nctx = nctx
         self.embed = torch.nn.Embedding(nvocab, dembed, padding_idx=0)
-        if self.nctx is not None:
-            self.pos = torch.nn.Parameter(torch.zeros([nctx, dembed]))
-            torch.nn.init.xavier_uniform_(self.pos)
+        # if self.nctx is not None:
+            # self.pos = torch.nn.Parameter(torch.zeros([nctx, dembed]))
+            # torch.nn.init.xavier_uniform_(self.pos)
+        self.pos = SinusoidalEncoding(dembed)
         nhidden = nhidden if nhidden is not None else 4*dembed
         if decoder_mode == "stirling":
             self.decoder = RetNetStirling(nlayers, dembed, nhidden, nheads)
@@ -317,9 +340,9 @@ class GPTR(torch.nn.Module):
 
     def forward(self, tokens : Int[Array, "batch tokens"],
                 apply_softmax : bool = False,
-                apply_positional_embedding : bool = False) -> Float[Array, "batch tokens vocab"]:
+                apply_positional_embedding : bool = True) -> Float[Array, "batch tokens vocab"]:
         #tokens : (..., ntokens)
-        x = self.decode(tokens)
+        x = self.decode(tokens, apply_positional_embedding)
         x = self.projection(x) #(..., ntokens, dmodel)
         if apply_softmax:
             x = torch.softmax(x, dim=-1) #(..., ntokens, nvocab)
@@ -331,14 +354,15 @@ class GPTR(torch.nn.Module):
                apply_positional_embedding : bool = True) -> Int[Array, "batch tokens"]:
         #tokens : (..., ntokens)
         d = tokens.shape[-1]
-        if self.nctx is not None:
-            tokens = tokens[..., :self.nctx]
+        # if self.nctx is not None:
+            # tokens = tokens[..., :self.nctx]
         xe = self.embed(tokens) #(..., ntokens, dembed)
         if apply_positional_embedding:
-            if self.nctx is None:
-                raise ValueError
-            d = tokens.shape[-1]
-            pos = self.pos[:d, :]
+            # if self.nctx is None:
+                # raise ValueError
+            # d = tokens.shape[-1]
+            # pos = self.pos[:d, :]
+            pos = self.pos(tokens)
             xe += pos
         xe = self.dropout(xe)
         x = self.decoder(xe)
@@ -410,12 +434,16 @@ class GPTRClassifier(torch.nn.Module):
                           decoder_mode=decoder_mode)
         self.classifier = torch.nn.Linear(config.embedding_dim,
                                           config.nclasses)
-
+        # self.classifier = torch.nn.Sequential(
+                            # torch.nn.Linear(config.embedding_dim, 4*config.embedding_dim),
+                            # torch.nn.ReLU(),
+                            # torch.nn.Linear(4*config.embedding_dim, config.nclasses)
+                        #  )
     def forward(self, input_ids, lengths):
         x = input_ids
         index_seq = lengths-1
-        if self.model.nctx is not None:
-            index_seq = torch.clamp(index_seq, max=self.model.nctx-1)
+        # if self.model.nctx is not None:
+            # index_seq = torch.clamp(if, max=self.model.nctx-1)
         index_batch = torch.arange(x.shape[0])
         apply_positional_embedding = True if self.model.decoder_mode == "transformer" else False
         x = self.model.decode(x, apply_positional_embedding=apply_positional_embedding)
